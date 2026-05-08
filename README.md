@@ -4,11 +4,12 @@ Small Python watcher for transfer-bonus promos that mention `LATAM`, `Azul`, or 
 
 ## What It Does
 
-- Polls RSS feeds.
+- Polls RSS and Atom feeds.
 - Can also scan narrower HTML section pages when a site does not expose a focused feed.
 - Filters for posts that mention your tracked programs plus both transfer language and bonus language.
+- Excludes known non-promo status/update wording such as bonus-crediting posts.
 - Tries to confirm matched posts against official LATAM / Azul / Livelo links found in the article before alerting.
-- Deduplicates alerts so the same post is sent once.
+- Deduplicates alerts so the same article is sent once, even if it appears in overlapping sources.
 - Sends a compact Telegram message with the title, source, publish time, summary, article link, and first confirmed official link when available.
 
 ## Files
@@ -17,6 +18,7 @@ Small Python watcher for transfer-bonus promos that mention `LATAM`, `Azul`, or 
 - `config.example.json`: example source list and keyword filters.
 - `.miles_transfer_state.json`: persisted seen-item state.
 - `.github/workflows/miles-transfer-bot.yml`: scheduled GitHub Actions workflow.
+- `tests/test_miles_transfer_bot.py`: regression tests for parsing, filtering, dedup, and confirmation logic.
 
 ## Setup
 
@@ -52,18 +54,18 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 python3 miles_transfer_bot.py --config config.json
 ```
 
-## Keep It Running
+## Keep It Running Locally
 
-Run every 30 minutes in a loop:
+If you want to run it on your own machine instead of GitHub Actions, a simple loop still works:
 
 ```bash
 python3 miles_transfer_bot.py --config config.json --loop-minutes 30
 ```
 
-Or run it from `cron` every 15 or 30 minutes. Example:
+Or run it from `cron`. Example for every day at 9:00 AM UTC-3:
 
 ```cron
-*/30 * * * * cd /path/to/telegram-miles-bot && /usr/bin/env TELEGRAM_BOT_TOKEN="your_bot_token" TELEGRAM_CHAT_ID="your_chat_id" /usr/bin/python3 miles_transfer_bot.py --config config.json >> bot.log 2>&1
+0 9 * * * cd /path/to/telegram-miles-bot && /usr/bin/env TELEGRAM_BOT_TOKEN="your_bot_token" TELEGRAM_CHAT_ID="your_chat_id" /usr/bin/python3 miles_transfer_bot.py --config config.json >> bot.log 2>&1
 ```
 
 ## Run It On GitHub Actions
@@ -101,20 +103,23 @@ git push -u origin main
 
 ## Tuning
 
-- Add or remove RSS feeds in `config.json`.
+- Add or remove feed and HTML sources in `config.json`.
 - Add narrower `kind: "html"` sources for stable category pages or sections.
 - Tighten keywords if you only want `Livelo -> Azul` or `bank -> LATAM`.
 - If a source becomes noisy, remove it and replace it with a narrower feed.
+- Add `negative_terms` for phrases that should never generate promo alerts.
 
 Config notes:
 
 - `kind` defaults to `feed`. Use `kind: "html"` for section/category pages.
 - `link_include_patterns` lets HTML sources keep only article URLs that match your regex list.
+- `title_cleanup_patterns` can strip author/time suffixes from HTML section-page links.
 - `official_link_patterns` controls which official domains are treated as second-stage confirmation candidates.
+- `negative_terms` blocks recurring false-positive wording.
 
 ## Notes
 
-- This version assumes the sources expose RSS or Atom feeds.
+- This version supports both RSS/Atom feeds and HTML section pages.
 - Network access is required at runtime both for the feeds and the Telegram Bot API.
 - SMS can be added later, but Telegram keeps this version simpler and free.
 - GitHub Actions schedules are not exact to the minute. A daily `12:00 UTC` cron usually runs close to that time, but not as a hard real-time SLA.
