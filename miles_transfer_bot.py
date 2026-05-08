@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from html import unescape
+from html import escape, unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -96,9 +96,7 @@ class FeedItem:
 
 def load_config(path: Path) -> dict:
     if not path.exists():
-        raise FileNotFoundError(
-            f"Missing config file at {path}. Copy config.example.json to config.json first."
-        )
+        raise FileNotFoundError(f"Missing config file at {path}.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -379,29 +377,38 @@ def format_message(item: FeedItem) -> str:
     if len(item.summary) > 280:
         summary += "..."
 
-    pieces = [
-        "Miles transfer promo found",
-        f"Program(s): LATAM / Azul / Livelo match",
-        f"Source: {item.source_name}",
-        f"Title: {item.title}",
-    ]
+    pieces = ["<b>Miles transfer promo found</b>"]
 
     if bonus:
-        pieces.append(f"Bonus spotted: {bonus}")
+        pieces.append(f"<b>Bonus:</b> {escape(bonus)}")
+
+    pieces.extend(
+        [
+            "<b>Programs:</b> LATAM / Azul / Livelo",
+            f"<b>Source:</b> {escape(item.source_name)}",
+            "",
+            f"<b>{escape(item.title)}</b>",
+        ]
+    )
 
     if item.published:
         pieces.append(
-            "Published: "
-            + item.published.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+            "<b>Published:</b> "
+            + escape(item.published.astimezone().strftime("%Y-%m-%d %H:%M %Z"))
         )
 
     if summary:
-        pieces.append(f"Summary: {summary}")
+        pieces.append(f"<b>Summary:</b> {escape(summary)}")
 
+    links: list[str] = []
     if item.official_links:
-        pieces.append(f"Official page: {item.official_links[0]}")
+        links.append(
+            f'<a href="{escape(item.official_links[0], quote=True)}">Official page</a>'
+        )
+    links.append(f'<a href="{escape(item.link, quote=True)}">Article</a>')
+    pieces.append("")
+    pieces.append(" | ".join(links))
 
-    pieces.append(f"Link: {item.link}")
     return "\n".join(pieces)
 
 
@@ -411,6 +418,7 @@ def send_telegram_message(token: str, chat_id: str, text: str, timeout_seconds: 
         {
             "chat_id": chat_id,
             "text": text,
+            "parse_mode": "HTML",
             "disable_web_page_preview": "true",
         }
     ).encode("utf-8")
