@@ -253,7 +253,13 @@ class OfficialConfirmationTests(unittest.TestCase):
 
         message = miles_transfer_bot.format_message(item)
 
-        self.assertIn("Official page:", message)
+        self.assertIn("<b>Miles transfer promo found</b>", message)
+        self.assertIn("<b>Bonus:</b> 30%", message)
+        self.assertIn(
+            '<a href="https://latampass.latam.com/pt_br/promocao/livelo-pontos-extras">Official page</a>',
+            message,
+        )
+        self.assertIn('<a href="https://example.com/promo-1">Article</a>', message)
 
 
 class RunOnceTests(unittest.TestCase):
@@ -332,9 +338,9 @@ class RunOnceTests(unittest.TestCase):
                 )
 
             self.assertEqual(exit_code, 0)
-            self.assertIn("Miles transfer promo found", first_output.getvalue())
-            self.assertIn("Bonus spotted: 30%", first_output.getvalue())
-            self.assertIn("Official page:", first_output.getvalue())
+            self.assertIn("<b>Miles transfer promo found</b>", first_output.getvalue())
+            self.assertIn("<b>Bonus:</b> 30%", first_output.getvalue())
+            self.assertIn("Official page</a>", first_output.getvalue())
 
             second_output = io.StringIO()
             with redirect_stdout(second_output):

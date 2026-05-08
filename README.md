@@ -15,14 +15,14 @@ Small Python watcher for transfer-bonus promos that mention `LATAM`, `Azul`, or 
 ## Files
 
 - `miles_transfer_bot.py`: the watcher.
-- `config.example.json`: example source list and keyword filters.
+- `config.json`: source list and keyword filters.
 - `.miles_transfer_state.json`: persisted seen-item state.
 - `.github/workflows/miles-transfer-bot.yml`: scheduled GitHub Actions workflow.
 - `tests/test_miles_transfer_bot.py`: regression tests for parsing, filtering, dedup, and confirmation logic.
 
 ## Setup
 
-1. Copy `config.example.json` to `config.json`.
+1. Edit `config.json`.
 2. Create a Telegram bot with [@BotFather](https://t.me/BotFather) and capture the bot token.
 3. Start a chat with your bot or add it to a private group.
 4. Get your chat id.
