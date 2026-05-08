@@ -1,5 +1,6 @@
 {
   "timeout_seconds": 20,
+  "max_item_age_days": 7,
   "tracked_terms": [
     "latam",
     "latam pass",

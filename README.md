@@ -108,6 +108,7 @@ git push -u origin main
 - Tighten keywords if you only want `Livelo -> Azul` or `bank -> LATAM`.
 - If a source becomes noisy, remove it and replace it with a narrower feed.
 - Add `negative_terms` for phrases that should never generate promo alerts.
+- Set `max_item_age_days` to cap how old an unseen promo can be before the bot skips it.
 
 Config notes:
 
@@ -116,6 +117,7 @@ Config notes:
 - `title_cleanup_patterns` can strip author/time suffixes from HTML section-page links.
 - `official_link_patterns` controls which official domains are treated as second-stage confirmation candidates.
 - `negative_terms` blocks recurring false-positive wording.
+- `max_item_age_days` defaults to `7`; set it to `0` to disable age-based skipping.
 
 ## Notes
 

@@ -128,6 +128,22 @@ class ParseRssItemsTests(unittest.TestCase):
             "LATAM Pass oferece 25% de bônus na transferência de pontos do Banrisul",
         )
 
+    def test_extract_article_published_parses_brazilian_datetime_text(self) -> None:
+        article_html = textwrap.dedent(
+            """\
+            <html>
+              <body>
+                <p>Publicado em 22/04/2026 às 10:37</p>
+              </body>
+            </html>
+            """
+        )
+
+        published = miles_transfer_bot.extract_article_published(article_html)
+
+        self.assertIsNotNone(published)
+        self.assertEqual(published.isoformat(), "2026-04-22T10:37:00-03:00")
+
 
 class FilteringTests(unittest.TestCase):
     def test_is_transfer_promo_requires_all_keyword_groups(self) -> None:
@@ -205,6 +221,7 @@ class OfficialConfirmationTests(unittest.TestCase):
             """\
             <html>
               <body>
+                <time datetime="2026-05-08T09:30:00-03:00"></time>
                 <a href="https://latampass.latam.com/pt_br/promocao/livelo-pontos-extras">
                   Página oficial
                 </a>
@@ -224,7 +241,7 @@ class OfficialConfirmationTests(unittest.TestCase):
             raise AssertionError(f"Unexpected URL: {url}")
 
         with patch.object(miles_transfer_bot, "fetch_text", side_effect=fake_fetch_text):
-            links = miles_transfer_bot.confirm_official_links(
+            published, links = miles_transfer_bot.confirm_official_links(
                 "https://example.com/article",
                 timeout_seconds=5,
                 official_link_patterns=[
@@ -234,6 +251,7 @@ class OfficialConfirmationTests(unittest.TestCase):
                 bonus_terms=["bonus", "bônus"],
             )
 
+        self.assertEqual(published.isoformat(), "2026-05-08T09:30:00-03:00")
         self.assertEqual(
             links,
             ["https://latampass.latam.com/pt_br/promocao/livelo-pontos-extras"],
@@ -355,6 +373,79 @@ class RunOnceTests(unittest.TestCase):
 
             saved_state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual(len(saved_state["seen_ids"]), 1)
+
+    def test_run_once_skips_unseen_stale_html_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            config_path = tmp_path / "config.json"
+            state_path = tmp_path / "state.json"
+
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "timeout_seconds": 5,
+                        "tracked_terms": ["latam", "azul", "livelo"],
+                        "transfer_terms": ["transfer", "transfira", "transferência"],
+                        "bonus_terms": ["bonus", "bônus"],
+                        "official_link_patterns": [
+                            r"^https://(?:www\.)?latampass\.latam\.com/"
+                        ],
+                        "max_item_age_days": 7,
+                        "sources": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            stale_item = miles_transfer_bot.FeedItem(
+                source_name="Melhores Destinos - Milhas",
+                title="LATAM Pass oferece 25% de bônus na transferência de pontos Esfera",
+                link="https://www.melhoresdestinos.com.br/milhas/esfera-latam-pass-abr26",
+                summary="",
+                published=None,
+            )
+            article_html = textwrap.dedent(
+                """\
+                <html>
+                  <body>
+                    <p>Publicado em 22/04/2020 às 10:37</p>
+                    <a href="https://latampass.latam.com/pt_br/promocao/esfera-milhas-extras">
+                      Página oficial
+                    </a>
+                  </body>
+                </html>
+                """
+            )
+            official_html = """
+                <html><body>Transfira seus pontos Esfera e ganhe 25% de bônus.</body></html>
+            """
+
+            def fake_fetch_text(url: str, timeout_seconds: int) -> str:
+                if url == stale_item.link:
+                    return article_html
+                if url == "https://latampass.latam.com/pt_br/promocao/esfera-milhas-extras":
+                    return official_html
+                raise AssertionError(f"Unexpected URL: {url}")
+
+            output = io.StringIO()
+            with (
+                patch.object(miles_transfer_bot, "fetch_matching_items", return_value=[stale_item]),
+                patch.object(miles_transfer_bot, "fetch_text", side_effect=fake_fetch_text),
+                redirect_stdout(output),
+            ):
+                exit_code = miles_transfer_bot.run_once(
+                    config_path,
+                    state_path,
+                    dry_run=True,
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Skipping stale promo", output.getvalue())
+            self.assertIn("No new matching promos found.", output.getvalue())
+            self.assertNotIn("<b>Miles transfer promo found</b>", output.getvalue())
+
+            saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved_state["seen_ids"], [stale_item.stable_id])
 
 
 if __name__ == "__main__":

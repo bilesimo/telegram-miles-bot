@@ -15,12 +15,13 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html import escape, unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable, List, Optional
+from zoneinfo import ZoneInfo
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.json")
@@ -30,6 +31,7 @@ DEFAULT_OFFICIAL_LINK_PATTERNS = [
     r"^https://(?:www\.)?voeazul\.com\.br/",
     r"^https://(?:www\d*\.)?livelo\.com\.br/",
 ]
+BRAZIL_TIMEZONE = ZoneInfo("America/Sao_Paulo")
 
 
 class TextExtractor(HTMLParser):
@@ -284,6 +286,38 @@ def extract_bonus(text: str) -> Optional[str]:
     return match.group(1) + "%"
 
 
+def extract_article_published(article_text: str) -> Optional[datetime]:
+    metadata_patterns = [
+        r'<meta[^>]+property=["\']article:published_time["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+name=["\']publish(?:ed)?_time["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+itemprop=["\']datePublished["\'][^>]+content=["\']([^"\']+)["\']',
+        r'"datePublished"\s*:\s*"([^"]+)"',
+        r"<time[^>]+datetime=[\"']([^\"']+)[\"']",
+    ]
+    for pattern in metadata_patterns:
+        match = re.search(pattern, article_text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        published = parse_datetime(match.group(1))
+        if published:
+            return published
+
+    local_datetime_match = re.search(
+        r"(\d{1,2}/\d{1,2}/\d{4})\s+(?:a|às)\s+(\d{1,2}:\d{2})",
+        strip_html(article_text),
+        flags=re.IGNORECASE,
+    )
+    if not local_datetime_match:
+        return None
+
+    published = datetime.strptime(
+        f"{local_datetime_match.group(1)} {local_datetime_match.group(2)}",
+        "%d/%m/%Y %H:%M",
+    )
+    return published.replace(tzinfo=BRAZIL_TIMEZONE)
+
+
 def is_transfer_promo(
     item: FeedItem,
     tracked_terms: list[str],
@@ -351,8 +385,9 @@ def confirm_official_links(
     official_link_patterns: list[str],
     transfer_terms: list[str],
     bonus_terms: list[str],
-) -> list[str]:
+) -> tuple[Optional[datetime], list[str]]:
     article_text = fetch_text(article_url, timeout_seconds)
+    published = extract_article_published(article_text)
     candidate_links = extract_official_links(article_text, article_url, official_link_patterns)
 
     confirmed_links: list[str] = []
@@ -368,7 +403,7 @@ def confirm_official_links(
         if has_transfer_term and has_bonus_term:
             confirmed_links.append(link)
 
-    return confirmed_links[:3]
+    return published, confirmed_links[:3]
 
 
 def format_message(item: FeedItem) -> str:
@@ -472,6 +507,31 @@ def fetch_matching_items(config: dict) -> list[FeedItem]:
     return matches
 
 
+def resolve_max_item_age(config: dict) -> Optional[timedelta]:
+    raw_max_age_days = config.get("max_item_age_days", 7)
+    if raw_max_age_days is None:
+        return None
+
+    max_age_days = float(raw_max_age_days)
+    if max_age_days <= 0:
+        return None
+
+    return timedelta(days=max_age_days)
+
+
+def is_stale_item(
+    item: FeedItem,
+    now: datetime,
+    max_item_age: Optional[timedelta],
+) -> bool:
+    if max_item_age is None or item.published is None:
+        return False
+
+    published_utc = item.published.astimezone(timezone.utc)
+    now_utc = now.astimezone(timezone.utc)
+    return now_utc - published_utc > max_item_age
+
+
 def run_once(config_path: Path, state_path: Path, dry_run: bool = False) -> int:
     config = load_config(config_path)
     state = load_state(state_path)
@@ -498,18 +558,33 @@ def run_once(config_path: Path, state_path: Path, dry_run: bool = False) -> int:
     )
     transfer_terms = config["transfer_terms"]
     bonus_terms = config["bonus_terms"]
+    max_item_age = resolve_max_item_age(config)
+    now = datetime.now(timezone.utc)
+    alerts_sent = 0
 
     for item in new_items:
+        if is_stale_item(item, now, max_item_age):
+            print(f"Skipping stale promo: {item.title}")
+            seen_ids.append(item.stable_id)
+            continue
+
         try:
-            item.official_links = confirm_official_links(
+            article_published, item.official_links = confirm_official_links(
                 item.link,
                 timeout_seconds,
                 official_link_patterns,
                 transfer_terms,
                 bonus_terms,
             )
+            if item.published is None:
+                item.published = article_published
         except urllib.error.URLError as exc:
             print(f"Official confirmation failed for {item.link} ({exc})", file=sys.stderr)
+
+        if is_stale_item(item, now, max_item_age):
+            print(f"Skipping stale promo: {item.title}")
+            seen_ids.append(item.stable_id)
+            continue
 
         message = format_message(item)
         if dry_run:
@@ -519,6 +594,10 @@ def run_once(config_path: Path, state_path: Path, dry_run: bool = False) -> int:
             send_telegram_message(token, chat_id, message, timeout_seconds)
             print(f"Sent alert for: {item.title}")
         seen_ids.append(item.stable_id)
+        alerts_sent += 1
+
+    if alerts_sent == 0:
+        print("No new matching promos found.")
 
     save_state(state_path, seen_ids)
     return 0
