@@ -62,10 +62,10 @@ If you want to run it on your own machine instead of GitHub Actions, a simple lo
 python3 miles_transfer_bot.py --config config.json --loop-minutes 30
 ```
 
-Or run it from `cron`. Example for every day at 9:00 AM UTC-3:
+Or run it from `cron`. Example for every day at 9:00 AM and 5:00 PM UTC-3:
 
 ```cron
-0 9 * * * cd /path/to/telegram-miles-bot && /usr/bin/env TELEGRAM_BOT_TOKEN="your_bot_token" TELEGRAM_CHAT_ID="your_chat_id" /usr/bin/python3 miles_transfer_bot.py --config config.json >> bot.log 2>&1
+0 9,17 * * * cd /path/to/telegram-miles-bot && /usr/bin/env TELEGRAM_BOT_TOKEN="your_bot_token" TELEGRAM_CHAT_ID="your_chat_id" /usr/bin/python3 miles_transfer_bot.py --config config.json >> bot.log 2>&1
 ```
 
 ## Run It On GitHub Actions
@@ -82,7 +82,7 @@ This is the recommended setup if you do not want the bot tied to your laptop.
 
 The workflow:
 
-- runs every day at 9:00 AM UTC-3 (12:00 UTC)
+- runs every day at 9:00 AM and 5:00 PM UTC-3 (12:00 UTC and 20:00 UTC)
 - can also be triggered manually
 - executes the bot once
 - commits `.miles_transfer_state.json` back to the repo only when it changes
@@ -124,4 +124,4 @@ Config notes:
 - This version supports both RSS/Atom feeds and HTML section pages.
 - Network access is required at runtime both for the feeds and the Telegram Bot API.
 - SMS can be added later, but Telegram keeps this version simpler and free.
-- GitHub Actions schedules are not exact to the minute. A daily `12:00 UTC` cron usually runs close to that time, but not as a hard real-time SLA.
+- GitHub Actions schedules are not exact to the minute. The `12:00 UTC` and `20:00 UTC` cron runs usually start close to those times, but not as a hard real-time SLA.
